@@ -18,9 +18,14 @@ library
   exposed-modules:     Lib
   build-depends:       base >= 4.7 && < 5
                      , aeson
+                     , either
+                     , http-types
                      , servant-server
+                     , text
                      , wai
+                     , wai-websockets
                      , warp
+                     , websockets
   default-language:    Haskell2010
 
 executable servant-playground-exe
