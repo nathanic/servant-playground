@@ -7,13 +7,16 @@ module Lib
     ( startApp
     ) where
 
-import Control.Concurrent (MVar, newMVar)
+import Control.Concurrent (MVar, newMVar, modifyMVar)
+import Control.Monad (join)
 import Control.Monad.Trans.Either
 
 import Data.Aeson
 import Data.Aeson.TH
 import Data.List (find)
-import Data.Maybe (fromJust)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (fromJust, fromMaybe)
 
 import Network.Wai
 import Network.Wai.Handler.Warp
@@ -21,6 +24,8 @@ import Network.Wai.Handler.Warp
 import Servant
 
 import qualified ChatServer as Chat
+
+type AppState = MVar (Map String (MVar Chat.ServerState))
 
 data User = User
   { userId        :: Int
@@ -35,22 +40,23 @@ type API = "users" :> QueryParam "firstName" String
                    :> Get '[JSON] [User]
     :<|> "user" :> Capture "userid" Int
                 :> Get '[JSON] User
-    :<|> "chat" :> Raw
+    :<|> "chat" :> Capture "chatroom" String
+                :> Raw
 
 startApp :: IO ()
 startApp = do
-    chatState <- newMVar Chat.newServerState
+    chatStates <- newMVar mempty
     run 8080 $
-        serve api (server chatState)
+        serve api (server chatStates)
 
 api :: Proxy API
 api = Proxy
 
-server :: MVar Chat.ServerState -> Server API
-server chatState =
+server :: AppState -> Server API
+server chatStates =
          getUsers
     :<|> getUser
-    :<|> Chat.waiApp chatState
+    :<|> getChatroom chatStates
 
 users :: [User]
 users = [ User 1 "Isaac" "Newton"
@@ -64,8 +70,17 @@ getUsers mfirst mlast = return $ filter (\u -> makePred mfirst userFirstName u
                                         users
   where makePred needle field = maybe (const True) (\s -> (== s) . field) needle
 
-
 getUser uid = case find ((== uid) . userId) users of
     Just u -> return u
     Nothing -> left err404 { errBody = "Dave's not here, man." }
+
+getChatroom :: AppState -> String -> Application
+getChatroom chatStates chatroom req respond = do
+    state <- modifyMVar chatStates $ \states ->
+        case Map.lookup chatroom states of
+            Just state -> return (states, state)
+            Nothing    -> do
+                state <- newMVar Chat.newServerState
+                return (Map.insert chatroom state states, state)
+    Chat.waiApp state req respond
 
