@@ -23,6 +23,7 @@ library
                      , http-types
                      , servant-server
                      , text
+                     , transformers
                      , wai
                      , wai-websockets
                      , warp
